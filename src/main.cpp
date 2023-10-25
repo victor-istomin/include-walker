@@ -13,6 +13,7 @@
 #include "model.h"
 #include "error.h"
 #include "msvcParser.h"
+#include "collapsible-colorful.hpp"
 
 // Take a list of component, display them vertically, one column shifted to the
 // right.
@@ -30,17 +31,25 @@ ftxui::Component Empty() {
   return std::make_shared<ftxui::ComponentBase>();
 }
 
+static const ftxui::Color k_colorHasCycle = ftxui::Color::Yellow;
+static const ftxui::Color k_colorIsCycle  = ftxui::Color::Red;
+
 ftxui::Component headerToComponent(const Model::Header& header)
 {
-    if (header.isEmpty())
+    if (header.isLeaf())
     {
         // no children, just text
-        auto leafComponent = ftxui::Renderer([name = header.name()](bool focused)
+        auto leafComponent = ftxui::Renderer(
+            [name = header.name(), hasCycle = header.hasCycle(), isCycle = header.isCycle()](bool focused)
         {
+            ftxui::Element element = ftxui::text(name);
             if (focused)
-                return ftxui::text(name) | ftxui::inverted | ftxui::focus;
-            else
-                return ftxui::text(name);
+                element = element | ftxui::inverted | ftxui::focus;
+            if (hasCycle)
+                element = element | ftxui::color(k_colorHasCycle);
+            if (isCycle)
+                element = element | ftxui::color(k_colorIsCycle);
+            return element;
         });
 
         return leafComponent;
@@ -52,7 +61,13 @@ ftxui::Component headerToComponent(const Model::Header& header)
     for (const Model::Header& child : header.children())
         children.push_back(headerToComponent(child));
 
-    return Collapsible(header.name(), Inner(children));
+    ftxui::Color color = ftxui::Color::Default;
+    if (header.hasCycle())
+        color = k_colorHasCycle;
+    if (header.isCycle())
+        color = k_colorIsCycle;
+
+    return CollapsibleColorful(header.name(), Inner(children), color);
 }
 
 ftxui::Component moduleToComponent(const Model::Module& module)
@@ -81,11 +96,20 @@ ftxui::Component modelToComponent(const Model& solution)
         container->Add(projectToComponent(project));
 
     auto renderer = ftxui::Renderer(container, [=] {
-        return container->Render() | ftxui::vscroll_indicator | ftxui::frame |
-            /*ftxui::size(ftxui::HEIGHT, ftxui::GREATER_THAN, 20) |*/ ftxui::border;
+        return container->Render() 
+            | ftxui::vscroll_indicator | ftxui::frame | ftxui::border;
     });
 
     return renderer;
+}
+
+void printCycle(const Model::Header& header)
+{
+    if (header.isCycle())
+        std::cout << " * cycle detected: " << header.name() << std::endl;
+
+    for (const auto& child : header.children())
+        printCycle(child);
 }
 
 int main(int argc, const char* argv[])
@@ -93,11 +117,10 @@ int main(int argc, const char* argv[])
     if (argc < 2) 
     {
         std::cout << "Usage: " << argv[0] << " <compilation log file>" << std::endl;
-        //return 0;
+        return 0;
     } 
     
-    //std::string compilationLogFile = argv[1];
-    std::string compilationLogFile = "input.log";
+    std::string compilationLogFile = argv[1];
     std::cout << "Parsing compilation log file: " << compilationLogFile << std::endl;
 
     Model model;
@@ -107,7 +130,13 @@ int main(int argc, const char* argv[])
     {
         msvcParser.parse(compilationLogFile);
         model.purgeEmpties();
+
+        for (const auto& [_, project] : model.projects())
+            for (const auto& [_, module] : project.modules())
+                for (const auto& header : module.headers())
+                    printCycle(header);
     }
+
     catch(const std::exception& e)
     {
         std::cerr << e.what() << '\n';

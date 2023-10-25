@@ -26,10 +26,7 @@ class MsvcParser
 
     static std::optional<std::string> extractInculeNote(const std::string& line);
 
-    static int extractHeaderLevel(const std::string& headerName);
-
     static HeaderInfo extractHeaderInfo(const std::string& headerName);
-
 
 public:
     MsvcParser(Model& model) : m_model(model) {}

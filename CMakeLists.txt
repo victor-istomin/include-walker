@@ -43,6 +43,7 @@ set(HEADERS
   src/model.h
   src/error.h
   src/msvcParser.h
+  src/collapsible-colorful.hpp
 )
 
 add_executable(include_walker ${SOURCES} ${HEADERS})

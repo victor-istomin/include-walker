@@ -2,6 +2,8 @@
 #include "error.h"
 #include <algorithm>
 #include <cassert>
+#include <locale>
+#include <array>
 
 Model::Module& Model::Project::addModule(const std::string& moduleName)
 {
@@ -58,38 +60,65 @@ void Model::purgeEmpties()
 
 void Model::Module::insertHeader(int level, const std::string& headerName)
 {
+    std::string normalizedName;
+    normalizedName.reserve(headerName.size());
+    std::transform(headerName.begin(), headerName.end(), std::back_inserter(normalizedName), &Header::normalizeChar);
+
     if (m_headers.empty() || level == 0)
     {
         // insert at root
-        m_headers.emplace_back(headerName);
+        m_headers.emplace_back(headerName, normalizedName, false);
         return;
     }
 
-    std::optional<std::reference_wrapper<Model::Header>> leaf = std::ref(m_headers.back());
-
-    auto nextLeaf = leaf->get().getChildLeaf();
+    std::vector<Header*> parents;
+    auto leaf     = std::optional<std::reference_wrapper<Model::Header>>(std::ref(m_headers.back()));
+    auto nextLeaf = leaf->get().getLastChild();
+    bool isCycleDependency = leaf->get().normalizedName() == normalizedName;
+    parents.push_back(std::addressof(leaf->get()));
     while (--level > 0 && nextLeaf.has_value())
     {
-        leaf = nextLeaf;
-        nextLeaf = leaf.has_value() ? leaf->get().getChildLeaf() : std::nullopt;
+        isCycleDependency = isCycleDependency || nextLeaf->get().normalizedName() == normalizedName;
+        leaf              = nextLeaf;
+        nextLeaf          = leaf.has_value() ? leaf->get().getLastChild() : std::nullopt;
+        parents.push_back(std::addressof(leaf->get()));
     }
 
-    leaf->get().emplaceChild(headerName);
+    leaf->get().emplaceChild(headerName, normalizedName, isCycleDependency);
+    if (isCycleDependency)
+        for (Header* parent : parents)
+            parent->setHasCycle();
 }
 
-// std::optional<std::reference_wrapper<Model::Header>> Model::Module::getLeafHeader(int level)
-// {
-//     if (m_headers.empty())
-//         return std::nullopt;
-// 
-//     if (level == 0)
-//         return std::nullopt;    // level 0 is root
-// 
-// 
-//     return leaf;
-// }
+char Model::Header::normalizeChar(char c)
+{
+#if WIN32
+    static const std::array<char, 256> mapping = []()
+    {
+        std::array<char, 256> mapping;
+        for (int i = 0; i < 256; ++i)
+        {
+            char c = std::tolower(static_cast<char>(i));
+            if (c == '/')
+                c = '\\';
+            mapping[i] = c;
+        }
+        return mapping;
+    }();
 
-std::optional<std::reference_wrapper<Model::Header>> Model::Header::getChildLeaf()
+    c = mapping[static_cast<size_t>(c)];
+#endif
+    return c;
+}
+
+Model::Header::Header(const std::string& name, const std::string& normalizedName, bool isCycle)
+    : m_name(name)
+    , m_normalizedName(normalizedName)
+    , m_isCycle(isCycle)
+{
+}
+
+std::optional<std::reference_wrapper<Model::Header>> Model::Header::getLastChild()
 {
     if (m_children.empty())
         return std::nullopt;

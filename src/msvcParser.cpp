@@ -49,13 +49,6 @@ std::optional<std::string> MsvcParser::extractInculeNote(const std::string& line
     return match[1];
 }
 
-int MsvcParser::extractHeaderLevel(const std::string& headerName)
-{
-    // in MSVC, header level is the number of spaces before the header name
-    auto itName = std::find_if_not(headerName.begin(), headerName.end(), [](char c) { return c == ' '; });
-    return std::distance(headerName.begin(), itName);
-}
-
 MsvcParser::HeaderInfo MsvcParser::extractHeaderInfo(const std::string& headerName)
 {
     auto itName = std::find_if_not(headerName.begin(), headerName.end(), [](char c) { return c == ' '; });

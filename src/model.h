@@ -9,9 +9,16 @@ struct Model
     class Header 
     {
         std::string m_name;
+        std::string m_normalizedName;
+
         std::vector<Header> m_children;
+        bool m_hasCycle = false;           // has cycle dependency among children
+        bool m_isCycle  = false;           // is cycle dependency itself
+
     public:
-        explicit Header(const std::string& name) : m_name(name) {}
+        static char normalizeChar(char c);
+
+        explicit Header(const std::string& name, const std::string& normalizedName, bool isCycle);
 
         Header(const Header&) = delete;
         Header& operator=(const Header&) = delete;
@@ -20,12 +27,19 @@ struct Model
         Header& operator=(Header&&) = default;
 
         const std::string& name() const { return m_name; }
+        const std::string& normalizedName() const { return m_normalizedName; }
 
-        void emplaceChild(const std::string& name) { m_children.emplace_back(name); }
+        void emplaceChild(const std::string& name, const std::string& normalizedName, bool isCycleDependency) { m_children.emplace_back(name, normalizedName, isCycleDependency); }
         const std::vector<Header>& children() const { return m_children; }
-        bool isEmpty() const { return m_children.empty(); }
+        
+        bool isLeaf() const { return m_children.empty(); }
+        bool hasCycle() const { return m_hasCycle; }
+        bool isCycle() const { return m_isCycle; }
 
-        std::optional<std::reference_wrapper<Header>> getChildLeaf();
+        void setHasCycle() { m_hasCycle = true; }
+        void setIsCycle()  { m_isCycle = true; }
+
+        std::optional<std::reference_wrapper<Header>> getLastChild();
     };
 
     class Module 
@@ -40,16 +54,12 @@ struct Model
         Module(Module&&) = default;
         Module& operator=(Module&&) = default;
 
-        void addHeader(const std::string& header) { m_headers.emplace_back(header); }
         bool isEmpty() const { return m_headers.empty(); }
 
         const std::string& name() const { return m_name; }
         const std::vector<Header>& headers() const { return m_headers; }
 
         void insertHeader(int level, const std::string& headerName);
-
-        //std::optional<std::reference_wrapper<Header>> lastHeader();
-        // std::optional<std::reference_wrapper<Header>> getLeafHeader(int level);
     };
 
     class Project
@@ -87,7 +97,7 @@ struct Model
     using ProjectId = int;
     std::map<ProjectId, Project> m_projects;
 
-    Project& addProject(ProjectId projectId, std::string projectName);;
+    Project& addProject(ProjectId projectId, std::string projectName);
     Project& getProject(ProjectId projectId);
 
     void purgeEmpties();
