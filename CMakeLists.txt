@@ -38,6 +38,7 @@ set(SOURCES
   src/model.cpp
   src/config.cpp
   src/msvcParser.cpp
+  src/ui.cpp
 )
 
 set(HEADERS
