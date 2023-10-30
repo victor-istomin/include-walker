@@ -28,6 +28,6 @@ Config::Config(argh::parser args)
     if (!m_findNormalized.empty())
         std::cout << " + search for: '" << m_findNormalized << "'" << std::endl;
 
-    std::transform(m_findNormalized.begin(), m_findNormalized.end(), m_findNormalized.begin(), &Model::Header::normalizeChar);
+    std::transform(m_findNormalized.begin(), m_findNormalized.end(), m_findNormalized.begin(), &Model::normalizePathChar);
 }
 

@@ -55,8 +55,6 @@ public:
             std::size_t m_end   = 0;
         };
 
-        static char normalizeChar(char c);
-
         explicit Header(const std::string& name, const std::string& normalizedName, bool isCycle);
 
         Header(const Header&) = delete;
@@ -153,9 +151,14 @@ public:
     void purgeEmpties();
     void simplifyPath();
 
+
+    static std::string normalizePath(std::string_view path);
+    static char normalizePathChar(char c);
+
     const std::map<ProjectId, Project>& projects() const { return m_projects; }
 
 private:
+
     std::map<ProjectId, Project> m_projects;
     const Config& m_config;
 };

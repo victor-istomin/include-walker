@@ -6,6 +6,29 @@
 #include <locale>
 #include <array>
 
+#include <filesystem>
+
+char Model::normalizePathChar(char c)
+{
+#if WIN32
+    static const std::array<char, 256> mapping = []()
+        {
+            std::array<char, 256> mapping;
+            for (int i = 0; i < 256; ++i)
+            {
+                char c = std::tolower(static_cast<char>(i));
+                if (c == '/')
+                    c = '\\';
+                mapping[i] = c;
+            }
+            return mapping;
+        }();
+
+        c = mapping[static_cast<unsigned char>(c)];
+#endif
+        return c;
+}
+
 Model::Module& Model::Project::addModule(const std::string& moduleName)
 {
     auto [it, isInserted] = m_modules.emplace(moduleName, Module(moduleName, m_config));
@@ -71,13 +94,16 @@ void Model::simplifyPath()
         project.simplifyPath();
 }
 
+std::string Model::normalizePath(std::string_view path)
+{
+    std::string normalized = std::filesystem::weakly_canonical(path).string();
+    std::transform(normalized.begin(), normalized.end(), std::back_inserter(normalized), &Model::normalizePathChar);
+    return normalized;
+}
+
 void Model::Module::insertHeader(int level, const std::string& headerName)
 {
-    std::string normalizedName;
-    normalizedName.reserve(headerName.size());
-    std::transform(headerName.begin(), headerName.end(), std::back_inserter(normalizedName), &Header::normalizeChar);
-    // #todo: refactor and improve; should normalize '/../' as well as case
-
+    std::string normalizedName = Model::normalizePath(headerName);
     if (m_config.m_simplifyPath)
         updateLongestPrefix(normalizedName);
 
@@ -143,27 +169,6 @@ void Model::Module::simplifyPath()
     size_t prefixSize = m_longestPrefix.size();
     for (Header& header : m_headers)
         header.simplifyPath(prefixSize);
-}
-
-char Model::Header::normalizeChar(char c)
-{
-#if WIN32
-    static const std::array<char, 256> mapping = []()
-    {
-        std::array<char, 256> mapping;
-        for (int i = 0; i < 256; ++i)
-        {
-            char c = std::tolower(static_cast<char>(i));
-            if (c == '/')
-                c = '\\';
-            mapping[i] = c;
-        }
-        return mapping;
-    }();
-
-    c = mapping[static_cast<unsigned char>(c)];
-#endif
-    return c;
 }
 
 Model::Header::Header(const std::string& name, const std::string& normalizedName, bool isCycle)
