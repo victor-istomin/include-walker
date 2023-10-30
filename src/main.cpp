@@ -10,98 +10,122 @@
 #include <iostream>
 #include <cassert>
 
+#include "argh.h"
+
 #include "model.h"
 #include "error.h"
 #include "msvcParser.h"
 #include "collapsible-colorful.hpp"
+#include "config.h"
 
-// Take a list of component, display them vertically, one column shifted to the
-// right.
-ftxui::Component Inner(std::vector<ftxui::Component> children) {
-  ftxui::Component vlist = ftxui::Container::Vertical(std::move(children));
-  return ftxui::Renderer(vlist, [vlist] {
-    return ftxui::hbox({
-        ftxui::text(" "),
-        vlist->Render(),
-    });
-  });
-}
- 
-ftxui::Component Empty() {
-  return std::make_shared<ftxui::ComponentBase>();
-}
 
 static const ftxui::Color k_colorHasCycle = ftxui::Color::Yellow;
-static const ftxui::Color k_colorIsCycle  = ftxui::Color::Red;
+static const ftxui::Color k_colorIsCycle = ftxui::Color::Red;
 
-ftxui::Component headerToComponent(const Model::Header& header)
+
+class UI
 {
-    if (header.isLeaf())
-    {
-        // no children, just text
-        auto leafComponent = ftxui::Renderer(
-            [name = header.name(), hasCycle = header.hasCycle(), isCycle = header.isCycle()](bool focused)
-        {
-            ftxui::Element element = ftxui::text(name);
-            if (focused)
-                element = element | ftxui::inverted | ftxui::focus;
-            if (hasCycle)
-                element = element | ftxui::color(k_colorHasCycle);
-            if (isCycle)
-                element = element | ftxui::color(k_colorIsCycle);
-            return element;
-        });
+    const Config& m_config;
 
-        return leafComponent;
+    // Take a list of component, display them vertically, one column shifted to the
+    // right.
+    static ftxui::Component Inner(std::vector<ftxui::Component> children) {
+        ftxui::Component vlist = ftxui::Container::Vertical(std::move(children));
+        return ftxui::Renderer(vlist, [vlist] {
+            return ftxui::hbox({
+                ftxui::text(" "),
+                vlist->Render(),
+                });
+            });
     }
 
-    // has children, collapsible
-    ftxui::Components children;
-    children.reserve(header.children().size());
-    for (const Model::Header& child : header.children())
-        children.push_back(headerToComponent(child));
+    static ftxui::Component Empty() {
+        return std::make_shared<ftxui::ComponentBase>();
+    }
 
-    ftxui::Color color = ftxui::Color::Default;
-    if (header.hasCycle())
-        color = k_colorHasCycle;
-    if (header.isCycle())
-        color = k_colorIsCycle;
+    ftxui::Component headerToComponent(const Model::Header& header)
+    {
+        if (header.isLeaf())
+        {
+            // no children, just text
+            auto leafComponent = ftxui::Renderer(
+                [name = header.name(), hasCycle = header.hasCycle(), isCycle = header.isCycle()](bool focused)
+                {
+                    ftxui::Element element = ftxui::text(name);
+                    if (focused)
+                        element = element | ftxui::inverted | ftxui::focus;
+                    if (hasCycle)
+                        element = element | ftxui::color(k_colorHasCycle);
+                    if (isCycle)
+                        element = element | ftxui::color(k_colorIsCycle);
+                    return element;
+                });
 
-    return CollapsibleColorful(header.name(), Inner(children), color);
-}
+            return leafComponent;
+        }
 
-ftxui::Component moduleToComponent(const Model::Module& module)
-{
-    ftxui::Components headers;
-    headers.reserve(module.headers().size());
-    for (const Model::Header& header : module.headers())
-        headers.push_back(headerToComponent(header));
-    
-    return Collapsible(module.name(), Inner(headers));
-}
+        // has children, collapsible
+        ftxui::Components children;
+        children.reserve(header.children().size());
+        for (const Model::Header& child : header.children())
+            children.push_back(headerToComponent(child));
 
-ftxui::Component projectToComponent(const Model::Project& project)
-{
-    ftxui::Components modules;
-    for(const auto& [name, module] : project.modules())
-        modules.push_back(moduleToComponent(module));
+        ftxui::Color color = ftxui::Color::Default;
+        if (header.hasCycle())
+            color = k_colorHasCycle;
+        if (header.isCycle())
+            color = k_colorIsCycle;
 
-    return Collapsible(project.name(), Inner(modules));
-}
+        bool autoExpand = m_config.m_autoExpand && (header.hasCycle() || header.isCycle());
+        return CollapsibleColorful(header.name(), Inner(children), color, autoExpand);
+    }
 
-ftxui::Component modelToComponent(const Model& solution)
-{
-    auto container = ftxui::Container::Vertical({});
-    for (const auto& [_, project] : solution.projects())
-        container->Add(projectToComponent(project));
+    ftxui::Component moduleToComponent(const Model::Module& unit)
+    {
+        ftxui::Components headers;
+        headers.reserve(unit.headers().size());
+        for (const Model::Header& header : unit.headers())
+            headers.push_back(headerToComponent(header));
 
-    auto renderer = ftxui::Renderer(container, [=] {
-        return container->Render() 
-            | ftxui::vscroll_indicator | ftxui::frame | ftxui::border;
-    });
+        bool autoExpand = m_config.m_autoExpand&& unit.hasCycle();
+        return Collapsible(unit.name(), Inner(headers), autoExpand);
+    }
 
-    return renderer;
-}
+    ftxui::Component projectToComponent(const Model::Project& project)
+    {
+        ftxui::Components modules;
+        bool autoExpand = false;
+        for (const auto& [name, unit] : project.modules())
+        {
+            autoExpand = autoExpand || (m_config.m_autoExpand && unit.hasCycle());
+            modules.push_back(moduleToComponent(unit));
+        }
+
+        return Collapsible(project.name(), Inner(modules), autoExpand);
+    }
+
+    ftxui::Component modelToComponent(const Model& solution)
+    {
+        auto container = ftxui::Container::Vertical({});
+        for (const auto& [_, project] : solution.projects())
+            container->Add(projectToComponent(project));
+
+        auto renderer = ftxui::Renderer(container, [=] {
+            return container->Render()
+                | ftxui::vscroll_indicator | ftxui::frame | ftxui::border;
+            });
+
+        return renderer;
+    }
+
+public:
+    UI(const Config& c) : m_config(c) {}
+
+    ftxui::Component make(const Model& solution)
+    {
+        return modelToComponent(solution);
+    }
+};
 
 void printCycle(const Model::Header& header)
 {
@@ -114,36 +138,36 @@ void printCycle(const Model::Header& header)
 
 int main(int argc, const char* argv[])
 {
-    if (argc < 2) 
+    Config config = argh::parser(argv);
+    if (config.m_showUsage)
     {
-        std::cout << "Usage: " << argv[0] << " <compilation log file>" << std::endl;
-        return 0;
-    } 
+        config.usageMesage();
+        return 1;
+    }
     
     std::string compilationLogFile = argv[1];
-    std::cout << "Parsing compilation log file: " << compilationLogFile << std::endl;
 
     Model model;
-    MsvcParser msvcParser = MsvcParser(model);
+    MsvcParser msvcParser = MsvcParser(config);
 
     try
     {
-        msvcParser.parse(compilationLogFile);
+        msvcParser.parse(model);
         model.purgeEmpties();
 
         for (const auto& [_, project] : model.projects())
-            for (const auto& [_, module] : project.modules())
-                for (const auto& header : module.headers())
+            for (const auto& [_, unit] : project.modules())
+                for (const auto& header : unit.headers())
                     printCycle(header);
     }
-
     catch(const std::exception& e)
     {
         std::cerr << e.what() << '\n';
         return 1;
     }
 
-    auto mine = modelToComponent(model);
+    UI ui = UI(config);
+    auto mine = ui.make(model);
     auto screen = ftxui::ScreenInteractive::FitComponent();
     screen.TrackMouse(false);
     screen.Loop(mine);

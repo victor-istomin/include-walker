@@ -72,19 +72,20 @@ void Model::Module::insertHeader(int level, const std::string& headerName)
     }
 
     std::vector<Header*> parents;
-    auto leaf     = std::optional<std::reference_wrapper<Model::Header>>(std::ref(m_headers.back()));
-    auto nextLeaf = leaf->get().getLastChild();
-    bool isCycleDependency = leaf->get().normalizedName() == normalizedName;
-    parents.push_back(std::addressof(leaf->get()));
-    while (--level > 0 && nextLeaf.has_value())
+    parents.reserve(level + 1);
+    parents.push_back(&m_headers.back());
+    bool isCycleDependency = parents.back()->normalizedName() == normalizedName;
+    while (--level > 0)
     {
-        isCycleDependency = isCycleDependency || nextLeaf->get().normalizedName() == normalizedName;
-        leaf              = nextLeaf;
-        nextLeaf          = leaf.has_value() ? leaf->get().getLastChild() : std::nullopt;
-        parents.push_back(std::addressof(leaf->get()));
+        if (Model::Header* nextLeaf = parents.back()->getLastChild(); nextLeaf)
+        {
+            parents.push_back(nextLeaf);
+            isCycleDependency = isCycleDependency || nextLeaf->normalizedName() == normalizedName;
+        }
     }
 
-    leaf->get().emplaceChild(headerName, normalizedName, isCycleDependency);
+    m_hasCycle = m_hasCycle || isCycleDependency;
+    parents.back()->emplaceChild(headerName, normalizedName, isCycleDependency);
     if (isCycleDependency)
         for (Header* parent : parents)
             parent->setHasCycle();
@@ -106,7 +107,7 @@ char Model::Header::normalizeChar(char c)
         return mapping;
     }();
 
-    c = mapping[static_cast<size_t>(c)];
+    c = mapping[static_cast<unsigned char>(c)];
 #endif
     return c;
 }
@@ -114,14 +115,12 @@ char Model::Header::normalizeChar(char c)
 Model::Header::Header(const std::string& name, const std::string& normalizedName, bool isCycle)
     : m_name(name)
     , m_normalizedName(normalizedName)
-    , m_isCycle(isCycle)
 {
+    if (isCycle)
+        setIsCycle();
 }
 
-std::optional<std::reference_wrapper<Model::Header>> Model::Header::getLastChild()
+Model::Header* Model::Header::getLastChild()
 {
-    if (m_children.empty())
-        return std::nullopt;
-
-    return std::ref(m_children.back());
+    return m_children.empty() ? nullptr : std::addressof(m_children.back());
 }

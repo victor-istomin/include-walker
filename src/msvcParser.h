@@ -3,11 +3,13 @@
 #include <map>
 #include <optional>
 
-#include "model.h"
+
+struct Config;
+class Model;
 
 class MsvcParser
 {
-    using ProjectId = Model::ProjectId;
+    using ProjectId = int;
     using HeaderLevel = int;
     struct HeaderInfo
     {
@@ -15,7 +17,7 @@ class MsvcParser
         HeaderLevel level = -1;
     };
 
-    Model& m_model;
+    const Config& m_config;
     std::map<ProjectId, std::string> m_mostRecentModule;
 
     static std::optional<std::pair<ProjectId, std::string>> splitProjectLine(const std::string& line);
@@ -24,14 +26,14 @@ class MsvcParser
 
     static std::optional<std::string> extractModuleName(const std::string& moduleLine);
 
-    static std::optional<std::string> extractInculeNote(const std::string& line);
+    static std::optional<std::string> extractInculeNote(const std::string& line, bool ignoreStd);
 
     static HeaderInfo extractHeaderInfo(const std::string& headerName);
 
 public:
-    MsvcParser(Model& model) : m_model(model) {}
+    MsvcParser(const Config& config) : m_config(config) {}
 
-    void parse(const std::string& logFileName);
+    void parse(Model& model);
 };
 
 

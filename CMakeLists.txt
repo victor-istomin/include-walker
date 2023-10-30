@@ -16,7 +16,7 @@ if(NOT ftxui_POPULATED)
 endif()
  
 # ------------------------------------------------------------------------------
- 
+
 project(include_walker
   LANGUAGES CXX
   VERSION 1.0.0
@@ -36,6 +36,7 @@ endif()
 set(SOURCES
   src/main.cpp
   src/model.cpp
+  src/config.cpp
   src/msvcParser.cpp
 )
 
@@ -43,11 +44,13 @@ set(HEADERS
   src/model.h
   src/error.h
   src/msvcParser.h
+  src/config.h
   src/collapsible-colorful.hpp
 )
 
 add_executable(include_walker ${SOURCES} ${HEADERS})
 target_include_directories(include_walker PRIVATE src)
+target_include_directories(include_walker PRIVATE submodules/argh) # include: argh!
  
 target_link_libraries(include_walker
   PRIVATE ftxui::screen

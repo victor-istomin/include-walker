@@ -4,16 +4,51 @@
 #include <map>
 #include <optional>
 
-struct Model
+#include <bitset>
+#include <type_traits>
+
+template<typename T>
+class EnumBits
 {
+private:
+    static constexpr std::size_t get_max() 
+    { 
+        return static_cast<std::size_t>(T::MaxValue);
+    } 
+
+    typename std::underlying_type<T>::type get_value(T v) const
+    {
+        return static_cast<typename std::underlying_type<T>::type>(v);
+    }
+
+    std::bitset<get_max()> m_bits;
+
+public:
+
+    bool test(T pos) const  { return m_bits.test(get_value(pos)); }
+    void set(T pos)         { m_bits.set(get_value(pos)); }
+};
+
+class Model
+{
+public:
+    using ProjectId = int;
+
+    enum class HeaderTraits
+    {
+        HasCycle,   // the header has cyclic dependency inside
+        IsCycle,    // the header is the cause of cuclic dependency
+        
+        MaxValue
+    };
+
     class Header 
     {
         std::string m_name;
         std::string m_normalizedName;
 
         std::vector<Header> m_children;
-        bool m_hasCycle = false;           // has cycle dependency among children
-        bool m_isCycle  = false;           // is cycle dependency itself
+        EnumBits<HeaderTraits> m_traits;
 
     public:
         static char normalizeChar(char c);
@@ -32,20 +67,21 @@ struct Model
         void emplaceChild(const std::string& name, const std::string& normalizedName, bool isCycleDependency) { m_children.emplace_back(name, normalizedName, isCycleDependency); }
         const std::vector<Header>& children() const { return m_children; }
         
-        bool isLeaf() const { return m_children.empty(); }
-        bool hasCycle() const { return m_hasCycle; }
-        bool isCycle() const { return m_isCycle; }
+        bool isLeaf() const   { return m_children.empty(); }
+        bool hasCycle() const { return m_traits.test(HeaderTraits::HasCycle); }
+        bool isCycle() const  { return m_traits.test(HeaderTraits::IsCycle); }
 
-        void setHasCycle() { m_hasCycle = true; }
-        void setIsCycle()  { m_isCycle = true; }
+        void setHasCycle() { m_traits.set(HeaderTraits::HasCycle); }
+        void setIsCycle()  { m_traits.set(HeaderTraits::IsCycle); }
 
-        std::optional<std::reference_wrapper<Header>> getLastChild();
+        Header* getLastChild();
     };
 
     class Module 
     {
         std::string m_name;
         std::vector<Header> m_headers;
+        bool m_hasCycle = false;
 
     public:
         explicit Module(const std::string& name) : m_name(name) {};
@@ -55,6 +91,7 @@ struct Model
         Module& operator=(Module&&) = default;
 
         bool isEmpty() const { return m_headers.empty(); }
+        bool hasCycle() const { return m_hasCycle; }
 
         const std::string& name() const { return m_name; }
         const std::vector<Header>& headers() const { return m_headers; }
@@ -79,23 +116,10 @@ struct Model
 
         const std::string& name() const { return m_name; }
 
-        template <typename Predicate>
-        Module* findModule(Predicate predicate)   // predicate: (name, module) -> bool
-        {
-            for (auto& [name, module] : m_modules)
-                if (predicate(name, module))
-                    return &module;
-            return nullptr;
-        }
-
         bool isEmpty() const;
 
         const std::map<std::string, Module>& modules() const { return m_modules; }
     };
-
-
-    using ProjectId = int;
-    std::map<ProjectId, Project> m_projects;
 
     Project& addProject(ProjectId projectId, std::string projectName);
     Project& getProject(ProjectId projectId);
@@ -103,6 +127,9 @@ struct Model
     void purgeEmpties();
 
     const std::map<ProjectId, Project>& projects() const { return m_projects; }
+
+private:
+    std::map<ProjectId, Project> m_projects;
 };
 
 

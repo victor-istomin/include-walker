@@ -4,6 +4,9 @@
 #include <fstream>
 #include <cassert>
 
+#include "model.h"
+#include "config.h"
+
 std::optional<std::pair<MsvcParser::ProjectId, std::string>> MsvcParser::splitProjectLine(const std::string& line)
 {
     // Examples: 
@@ -39,13 +42,23 @@ std::optional<std::string> MsvcParser::extractModuleName(const std::string& modu
     return match[0];
 }
 
-std::optional<std::string> MsvcParser::extractInculeNote(const std::string& line)
+std::optional<std::string> MsvcParser::extractInculeNote(const std::string& line, bool ignoreStd)
 {
     // Examples: "Note: including file: C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.36.32532\include\typeinfo"
     static const std::regex includeNoteRegex(R"(Note: including file: (.+))");
+    static const std::regex stdIncludeRegex(R"(\\VC\\Tools\\MSVC\\[\.\d]+\\include\\)");
+    static const std::regex crtIncludeRegex(R"(\\Windows Kits\\.+\\ucrt\\)");
+
     std::smatch match;
     if (!std::regex_match(line, match, includeNoteRegex))
         return std::nullopt;
+
+    if (ignoreStd 
+        && (std::regex_search(line, stdIncludeRegex) || std::regex_search(line, crtIncludeRegex)))
+    {
+        return std::nullopt;
+    }
+        
     return match[1];
 }
 
@@ -59,11 +72,11 @@ MsvcParser::HeaderInfo MsvcParser::extractHeaderInfo(const std::string& headerNa
     };
 }
 
-void MsvcParser::parse(const std::string& logFileName)
+void MsvcParser::parse(Model& model)
 {
-    std::ifstream compilationLog(logFileName);
+    std::ifstream compilationLog(m_config.m_inputFile);
     if (!compilationLog.is_open())
-        throw Error("Error: could not open file ", logFileName);
+        throw Error("Error: could not open file ", m_config.m_inputFile);
 
     std::string line;
     while (std::getline(compilationLog, line))
@@ -78,11 +91,11 @@ void MsvcParser::parse(const std::string& logFileName)
         // maybe, it's new project header
         if (auto newProjectName = extractNewProjectName(projectLine); newProjectName)
         {
-            m_model.addProject(projectId, *newProjectName);
+            model.addProject(projectId, *newProjectName);
             continue;
         }
 
-        Model::Project& project = m_model.getProject(projectId);
+        Model::Project& project = model.getProject(projectId);
 
         // ... or it's module line
         if (auto newModuleName = extractModuleName(projectLine); newModuleName)
@@ -93,7 +106,7 @@ void MsvcParser::parse(const std::string& logFileName)
         }
 
         // ... or it's include note
-        if (auto includeNote = extractInculeNote(projectLine); includeNote)
+        if (auto includeNote = extractInculeNote(projectLine, m_config.m_ignoreStd); includeNote)
         {
             HeaderInfo headerInfo = extractHeaderInfo(*includeNote);
             Model::Module& unit = project.getModule(m_mostRecentModule[projectId]);
